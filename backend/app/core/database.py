@@ -31,19 +31,17 @@ def _build_engine():
         )
 
     # ── PostgreSQL via Supabase Transaction Pooler (port 6543) ─
-    # Pooler requires statement_cache_size=0 for asyncpg
     if "pooler.supabase.com" in url or "6543" in url:
         return create_async_engine(
             url,
             pool_size=3,
             max_overflow=5,
-            pool_pre_ping=True,
+            pool_pre_ping=False,        # must be False for PgBouncer transaction mode
             pool_recycle=300,
             echo=settings.DEBUG,
             connect_args={
                 "ssl": "require",
-                "statement_cache_size": 0,     # required for PgBouncer/Supabase pooler
-                "server_settings": {"search_path": "public"},
+                "statement_cache_size": 0,
             },
         )
 
@@ -69,29 +67,21 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def get_db() -> AsyncSession:
-    """
-    FastAPI dependency — yields an async database session.
-    Returns HTTP 503 with a clear message if the database is unreachable.
-    """
+async def get_db():
+    """FastAPI dependency — yields an async DB session."""
+    session = AsyncSessionLocal()
     try:
-        async with AsyncSessionLocal() as session:
-            try:
-                yield session
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                raise
+        yield session
+        await session.commit()
     except HTTPException:
+        await session.rollback()
         raise
     except Exception as e:
-        logger.error("Database connection failed", error=str(e))
+        await session.rollback()
+        logger.error("DB session error", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Database unavailable. "
-                "Ensure DATABASE_URL uses Supabase Transaction Pooler port 6543: "
-                "postgresql+asyncpg://postgres.YOUR_REF:PASS"
-                "@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
-            ),
+            detail=f"Database error: {str(e)[:200]}",
         )
+    finally:
+        await session.close()
