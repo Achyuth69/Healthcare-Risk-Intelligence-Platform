@@ -125,34 +125,28 @@ def create_application() -> FastAPI:
             "status": "healthy",
             "version": settings.APP_VERSION,
             "environment": settings.APP_ENV,
+            "build": "nullpool-v3",    # change this to confirm new deploy
         }
 
-    # DB diagnostics — shows exact connection error
+    # DB diagnostics
     @app.get("/db-test", tags=["Health"])
     async def db_test():
-        import os
+        from urllib.parse import urlparse
         url = settings.DATABASE_URL
-        # Mask password for safe display
         try:
-            from urllib.parse import urlparse
             p = urlparse(url)
             safe_url = f"{p.scheme}://{p.username}:***@{p.hostname}:{p.port}{p.path}"
         except Exception:
-            safe_url = "unable to parse"
+            safe_url = "parse error"
+
         try:
+            # Use a fresh connection — bypasses any pool issues
             async with engine.connect() as conn:
                 from sqlalchemy import text
-                result = await conn.execute(text("SELECT 1"))
-                return {
-                    "database": "connected",
-                    "url_used": safe_url,
-                }
+                await conn.execute(text("SELECT 1"))
+            return {"database": "connected", "url_used": safe_url, "build": "nullpool-v3"}
         except Exception as e:
-            return {
-                "database": "failed",
-                "url_used": safe_url,
-                "error": str(e),
-            }
+            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "nullpool-v3"}
 
     return app
 
