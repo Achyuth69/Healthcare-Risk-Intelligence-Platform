@@ -124,7 +124,7 @@ def create_application() -> FastAPI:
             "status": "healthy",
             "version": settings.APP_VERSION,
             "environment": settings.APP_ENV,
-            "build": "asyncpg-connect-args-v7",
+            "build": "raw-asyncpg-creator-v8",
         }
 
     @app.get("/db-test", tags=["Health"])
@@ -140,9 +140,9 @@ def create_application() -> FastAPI:
             async with engine.connect() as conn:
                 from sqlalchemy import text
                 await conn.execute(text("SELECT 1"))
-            return {"database": "connected", "url_used": safe_url, "build": "asyncpg-connect-args-v7"}
+            return {"database": "connected", "url_used": safe_url, "build": "raw-asyncpg-creator-v8"}
         except Exception as e:
-            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "asyncpg-connect-args-v7"}
+            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "raw-asyncpg-creator-v8"}
 
     return app
 

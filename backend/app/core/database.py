@@ -1,13 +1,10 @@
 """
-Database — asyncpg with prepared_statement_cache_size=0 hardcoded via creator.
-This is the ONLY reliable way to disable prepared statements for Supabase pooler.
+Database — raw asyncpg pool with statement_cache_size=0
+bypasses SQLAlchemy's asyncpg wrapper which ignores cache settings.
 """
-import structlog
 import asyncpg
-from sqlalchemy.ext.asyncio import (
-    AsyncSession, AsyncConnection,
-    create_async_engine, async_sessionmaker
-)
+import structlog
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool, StaticPool
 from fastapi import HTTPException, status
@@ -21,15 +18,15 @@ class Base(DeclarativeBase):
     pass
 
 
-async def _asyncpg_connect(**kwargs):
-    """
-    Custom asyncpg connection factory.
-    Forces prepared_statement_cache_size=0 regardless of URL parameters.
-    This is the definitive fix for Supabase Transaction Pooler (PgBouncer).
-    """
-    kwargs.setdefault("statement_cache_size", 0)
-    kwargs.setdefault("prepared_statement_cache_size", 0)
-    return await asyncpg.connect(**kwargs)
+def _get_pg_dsn() -> str:
+    """Return a clean DSN for asyncpg (no driver prefix, no query params)."""
+    url = settings.DATABASE_URL
+    # Strip sqlalchemy driver prefix
+    url = url.replace("postgresql+asyncpg://", "postgresql://")
+    # Strip any existing query params
+    if "?" in url:
+        url = url.split("?")[0]
+    return url
 
 
 def _build_engine():
@@ -44,27 +41,27 @@ def _build_engine():
             poolclass=StaticPool,
         )
 
-    # ── PostgreSQL (Supabase Transaction Pooler) ──────────────
-    # Normalize to asyncpg URL
+    # ── PostgreSQL — use NullPool; actual connection via raw asyncpg ──
     pg_url = url
     if not pg_url.startswith("postgresql+asyncpg://"):
         pg_url = pg_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-
-    # Strip any existing query params — we handle them via creator
     if "?" in pg_url:
         pg_url = pg_url.split("?")[0]
 
-    logger.info("Building PostgreSQL engine with prepared_statement_cache_size=0")
+    async def _creator():
+        dsn = _get_pg_dsn()
+        return await asyncpg.connect(
+            dsn,
+            statement_cache_size=0,       # ← the actual fix
+            prepared_statement_cache_size=0,
+            ssl="require",
+        )
 
     return create_async_engine(
         pg_url,
         poolclass=NullPool,
         echo=settings.DEBUG,
-        connect_args={
-            "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
-            "ssl": "require",
-        },
+        creator=_creator,
     )
 
 
@@ -80,7 +77,6 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_db():
-    """FastAPI dependency — yields an async DB session."""
     session = AsyncSessionLocal()
     try:
         yield session
