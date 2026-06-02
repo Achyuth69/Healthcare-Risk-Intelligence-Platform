@@ -23,26 +23,25 @@ logger = structlog.get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown hooks."""
-    # ── Startup ──────────────────────────────────────────────
     configure_logging()
     logger.info("Starting Healthcare Risk Intelligence Platform",
-                version=settings.APP_VERSION,
-                env=settings.APP_ENV)
+                version=settings.APP_VERSION, env=settings.APP_ENV)
 
-    # Create DB tables (use Alembic migrations in production)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    logger.info("Database tables initialized")
+    # ── Database (non-fatal — app still starts if DB unreachable) ──
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables initialized")
+        await _seed_admin()
+    except Exception as e:
+        logger.error("DB init failed — running without DB (check DATABASE_URL)", error=str(e))
 
-    # Seed default admin user
-    await _seed_admin()
-
-    # Pre-load ML models into memory
+    # ── ML Models ─────────────────────────────────────────────
     from app.ml.model_registry import ModelRegistry
     await ModelRegistry.initialize()
     logger.info("ML models loaded into registry")
 
-    # Initialize RAG pipeline (non-blocking — mock mode if ChromaDB not running)
+    # ── RAG Pipeline ──────────────────────────────────────────
     try:
         from app.rag.pipeline import RAGPipeline
         await RAGPipeline.initialize()
@@ -50,7 +49,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning("RAG pipeline init skipped (mock mode)", error=str(e))
 
-    # Initialize LLM (non-blocking — mock mode if model not present)
+    # ── LLM Engine ────────────────────────────────────────────
     try:
         from app.ml.llm.inference import LLMInferenceEngine
         await LLMInferenceEngine.initialize()
@@ -60,7 +59,6 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # ── Shutdown ─────────────────────────────────────────────
     logger.info("Shutting down Healthcare Risk Intelligence Platform")
     await engine.dispose()
 
@@ -73,9 +71,9 @@ def create_application() -> FastAPI:
             "with SHAP/LIME explanations, fine-tuned LLM, and RAG-powered clinical insights."
         ),
         version=settings.APP_VERSION,
-        docs_url="/docs" if settings.DEBUG else None,
-        redoc_url="/redoc" if settings.DEBUG else None,
-        openapi_url="/openapi.json" if settings.DEBUG else None,
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
         lifespan=lifespan,
     )
 
