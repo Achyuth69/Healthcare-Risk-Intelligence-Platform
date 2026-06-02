@@ -1,7 +1,8 @@
 """
 Database Configuration — Async SQLAlchemy
-Uses NullPool for ALL PostgreSQL connections to avoid
-PgBouncer / Supabase Transaction Pooler prepared statement conflicts.
+- SQLite  for local dev
+- psycopg (psycopg3) for Supabase/PostgreSQL in production
+  psycopg3 does NOT use prepared statements by default → no PgBouncer conflict
 """
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -20,7 +21,7 @@ class Base(DeclarativeBase):
 
 def _build_engine():
     url = settings.DATABASE_URL
-    logger.info("Building DB engine", url_prefix=url[:30])
+    logger.info("Building DB engine", prefix=url[:35])
 
     # ── SQLite (local dev) ────────────────────────────────────
     if url.startswith("sqlite"):
@@ -31,19 +32,23 @@ def _build_engine():
             poolclass=StaticPool,
         )
 
-    # ── ALL PostgreSQL — NullPool + no prepared statements ────
-    # NullPool: new connection per request, no pool reuse.
-    # This is the ONLY safe option for Supabase Transaction Pooler
-    # (PgBouncer in transaction mode bans prepared statements).
+    # ── PostgreSQL (production) ───────────────────────────────
+    # Convert asyncpg URL → psycopg URL
+    # asyncpg: postgresql+asyncpg://...
+    # psycopg: postgresql+psycopg://...
+    pg_url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
+    if not pg_url.startswith("postgresql+psycopg://"):
+        pg_url = pg_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    logger.info("Using psycopg3 driver (no prepared statement conflicts)")
+
     return create_async_engine(
-        url,
-        poolclass=NullPool,
+        pg_url,
+        poolclass=NullPool,       # fresh connection per request
         echo=settings.DEBUG,
-        execution_options={"no_parameters": True},
         connect_args={
-            "ssl": "require",
-            "statement_cache_size": 0,
-            "prepared_statement_cache_size": 0,
+            "sslmode": "require",
+            "prepare_threshold": None,  # disable server-side prepared statements
         },
     )
 

@@ -124,10 +124,9 @@ def create_application() -> FastAPI:
             "status": "healthy",
             "version": settings.APP_VERSION,
             "environment": settings.APP_ENV,
-            "build": "nullpool-v3",    # change this to confirm new deploy
+            "build": "psycopg3-v5",
         }
 
-    # DB diagnostics
     @app.get("/db-test", tags=["Health"])
     async def db_test():
         from urllib.parse import urlparse
@@ -137,15 +136,13 @@ def create_application() -> FastAPI:
             safe_url = f"{p.scheme}://{p.username}:***@{p.hostname}:{p.port}{p.path}"
         except Exception:
             safe_url = "parse error"
-
         try:
-            # Use a fresh connection — bypasses any pool issues
             async with engine.connect() as conn:
                 from sqlalchemy import text
                 await conn.execute(text("SELECT 1"))
-            return {"database": "connected", "url_used": safe_url, "build": "nullpool-v4-forced"}
+            return {"database": "connected", "url_used": safe_url, "build": "psycopg3-v5"}
         except Exception as e:
-            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "nullpool-v4-forced"}
+            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "psycopg3-v5"}
 
     return app
 
