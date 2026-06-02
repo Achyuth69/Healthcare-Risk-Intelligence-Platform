@@ -1,6 +1,5 @@
 """
 Healthcare Risk Intelligence Platform — FastAPI Application Entry Point
-Production-grade setup with middleware, monitoring, and lifecycle management.
 """
 import time
 import structlog
@@ -22,54 +21,49 @@ logger = structlog.get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan: startup and shutdown hooks."""
     configure_logging()
-    logger.info("Starting Healthcare Risk Intelligence Platform",
-                version=settings.APP_VERSION, env=settings.APP_ENV)
+    logger.info("Starting HealthRisk AI", version=settings.APP_VERSION, env=settings.APP_ENV)
 
-    # ── Database (non-fatal — app still starts if DB unreachable) ──
+    # DB — non-fatal startup
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database tables initialized")
         await _seed_admin()
     except Exception as e:
-        logger.error("DB init failed — running without DB (check DATABASE_URL)", error=str(e))
+        logger.error("DB init failed", error=str(e))
 
-    # ── ML Models ─────────────────────────────────────────────
+    # ML Models
     from app.ml.model_registry import ModelRegistry
     await ModelRegistry.initialize()
-    logger.info("ML models loaded into registry")
+    logger.info("ML models loaded")
 
-    # ── RAG Pipeline ──────────────────────────────────────────
+    # RAG Pipeline
     try:
         from app.rag.pipeline import RAGPipeline
         await RAGPipeline.initialize()
-        logger.info("RAG pipeline initialized")
+        logger.info("RAG pipeline ready")
     except Exception as e:
-        logger.warning("RAG pipeline init skipped (mock mode)", error=str(e))
+        logger.warning("RAG mock mode", error=str(e))
 
-    # ── LLM Engine ────────────────────────────────────────────
+    # LLM Engine
     try:
         from app.ml.llm.inference import LLMInferenceEngine
         await LLMInferenceEngine.initialize()
-        logger.info("LLM engine initialized")
+        logger.info("LLM engine ready")
     except Exception as e:
-        logger.warning("LLM engine init skipped (mock mode)", error=str(e))
+        logger.warning("LLM mock mode", error=str(e))
 
     yield
 
-    logger.info("Shutting down Healthcare Risk Intelligence Platform")
+    logger.info("Shutting down")
     await engine.dispose()
 
 
 def create_application() -> FastAPI:
     app = FastAPI(
         title="Healthcare Risk Intelligence Platform",
-        description=(
-            "Production-grade Explainable AI platform for disease risk prediction "
-            "with SHAP/LIME explanations, fine-tuned LLM, and RAG-powered clinical insights."
-        ),
+        description="Explainable AI for disease risk prediction.",
         version=settings.APP_VERSION,
         docs_url="/docs",
         redoc_url="/redoc",
@@ -77,62 +71,55 @@ def create_application() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # ── Middleware ────────────────────────────────────────────
-    # CORS — allow all origins if ALLOWED_ORIGINS contains "*", else use list
-    origins = settings.get_allowed_origins()
-    allow_all = "*" in origins
-
+    # ── CORS — allow ALL origins (required for Vercel ↔ Render) ──
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if allow_all else origins,
-        allow_origin_regex=r"https://.*\.vercel\.app" if not allow_all else None,
-        allow_credentials=False if allow_all else True,
-        allow_methods=["*"],
+        allow_origins=["*"],
+        allow_credentials=False,   # must be False when allow_origins=["*"]
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["*"],
+        expose_headers=["*"],
     )
+
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
-    # ── Request Timing Middleware ─────────────────────────────
+    # Request timing
     @app.middleware("http")
-    async def add_process_time_header(request: Request, call_next):
+    async def add_process_time(request: Request, call_next):
         start = time.perf_counter()
         response = await call_next(request)
-        duration = time.perf_counter() - start
-        response.headers["X-Process-Time"] = f"{duration:.4f}"
+        response.headers["X-Process-Time"] = f"{(time.perf_counter()-start):.4f}"
         return response
 
-    # ── Exception Handlers ────────────────────────────────────
+    # Domain exception handler
     @app.exception_handler(HealthRiskException)
-    async def health_risk_exception_handler(request: Request, exc: HealthRiskException):
-        logger.warning("Domain exception", detail=exc.detail, code=exc.error_code)
+    async def domain_exc(request: Request, exc: HealthRiskException):
         return JSONResponse(
             status_code=exc.status_code,
             content={"error": exc.error_code, "detail": exc.detail},
         )
 
+    # Catch-all exception handler
     @app.exception_handler(Exception)
-    async def unhandled_exception_handler(request: Request, exc: Exception):
-        logger.error("Unhandled exception", exc_info=exc, path=request.url.path)
+    async def generic_exc(request: Request, exc: Exception):
+        logger.error("Unhandled error", exc_info=exc, path=request.url.path)
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={"error": "INTERNAL_ERROR", "detail": "An unexpected error occurred."},
         )
 
-    # ── Prometheus Metrics ────────────────────────────────────
+    # Prometheus
     Instrumentator(
         should_group_status_codes=True,
-        should_ignore_untemplated=True,
-        should_respect_env_var=True,
-        should_instrument_requests_inprogress=True,
         excluded_handlers=["/health", "/metrics"],
     ).instrument(app).expose(app, endpoint="/metrics")
 
-    # ── Routers ───────────────────────────────────────────────
+    # Routes
     app.include_router(api_router, prefix="/api/v1")
 
-    # ── Health Check ─────────────────────────────────────────
+    # Health check
     @app.get("/health", tags=["Health"])
-    async def health_check():
+    async def health():
         return {
             "status": "healthy",
             "version": settings.APP_VERSION,
@@ -146,7 +133,6 @@ app = create_application()
 
 
 async def _seed_admin():
-    """Create default admin user if none exists."""
     from sqlalchemy import select
     from app.core.database import AsyncSessionLocal
     from app.core.security import hash_password
@@ -167,4 +153,4 @@ async def _seed_admin():
             )
             session.add(admin)
             await session.commit()
-            logger.info("Default admin user created", email="admin@healthrisk.ai")
+            logger.info("Admin user created")
