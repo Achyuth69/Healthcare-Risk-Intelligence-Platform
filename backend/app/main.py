@@ -31,7 +31,8 @@ async def lifespan(app: FastAPI):
         logger.info("Database tables initialized")
         await _seed_admin()
     except Exception as e:
-        logger.error("DB init failed", error=str(e))
+        logger.error("DB init failed — check DATABASE_URL env var", error=str(e))
+        logger.warning("App starting WITHOUT database — auth/predictions will return 503")
 
     # ML Models
     from app.ml.model_registry import ModelRegistry

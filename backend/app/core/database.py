@@ -49,8 +49,8 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def get_db() -> AsyncSession:
     """
-    FastAPI dependency — yields a database session.
-    Returns 503 if the database is unreachable.
+    FastAPI dependency — yields a DB session.
+    Returns 503 with a clear message if the database is unreachable.
     """
     try:
         async with AsyncSessionLocal() as session:
@@ -63,8 +63,13 @@ async def get_db() -> AsyncSession:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Database connection failed", error=str(e))
+        err = str(e)
+        logger.error("Database connection failed", error=err)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Database temporarily unavailable. Please try again shortly.",
+            detail=(
+                "Database unavailable. "
+                "On Render: go to Environment → set DATABASE_URL to your "
+                "Render PostgreSQL Internal Database URL (postgresql+asyncpg://...)."
+            ),
         )
