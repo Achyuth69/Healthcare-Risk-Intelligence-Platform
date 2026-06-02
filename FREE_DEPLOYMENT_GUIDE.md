@@ -222,7 +222,7 @@ VALUES (
 | `APP_ENV` | `production` |
 | `DEBUG` | `false` |
 | `APP_VERSION` | `1.0.0` |
-| `DATABASE_URL` | `postgresql+asyncpg://postgres.pmhazxdanfriuhzvjodn:YOUR_PASS@aws-0-us-east-1.pooler.supabase.com:6543/postgres` |
+| `DATABASE_URL` | `postgresql+asyncpg://postgres.pmhazxdanfriuhzvjodn:YOUR_PASS@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres` |
 | `SECRET_KEY` | click **Generate** |
 | `JWT_SECRET_KEY` | click **Generate** |
 | `JWT_ALGORITHM` | `HS256` |

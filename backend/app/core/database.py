@@ -90,8 +90,8 @@ async def get_db() -> AsyncSession:
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
                 "Database unavailable. "
-                "Ensure DATABASE_URL uses Supabase Transaction Pooler "
-                "(port 6543, not 5432): "
-                "postgresql+asyncpg://postgres.xxx:PASS@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+                "Ensure DATABASE_URL uses Supabase Transaction Pooler port 6543: "
+                "postgresql+asyncpg://postgres.YOUR_REF:PASS"
+                "@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
             ),
         )
