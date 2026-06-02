@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+backend/venv/
+frontend/node_modules/
+
+# Environment files (NEVER commit secrets)
+.env
+.env.*
+.env.render
+!.env.example
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Model artifacts (large binary files — store in S3)
+backend/models/*.pkl
+backend/models/*.bin
+backend/models/*.pt
+backend/models/*.safetensors
+!backend/models/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Docker
+*.tar
+
+# Kubernetes secrets (never commit)
+infrastructure/kubernetes/secrets.yaml

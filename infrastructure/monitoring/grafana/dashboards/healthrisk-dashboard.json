@@ -1,0 +1,49 @@
+{
+  "title": "HealthRisk AI — Platform Dashboard",
+  "uid": "healthrisk-main",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate (req/s)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [{
+        "expr": "rate(http_requests_total{job='healthrisk-backend'}[1m])",
+        "legendFormat": "req/s"
+      }]
+    },
+    {
+      "id": 2,
+      "title": "P99 Latency (ms)",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [{
+        "expr": "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job='healthrisk-backend'}[5m])) * 1000",
+        "legendFormat": "p99 ms"
+      }]
+    },
+    {
+      "id": 3,
+      "title": "Error Rate (%)",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+      "targets": [{
+        "expr": "rate(http_requests_total{job='healthrisk-backend',status=~'5..'}[5m]) / rate(http_requests_total{job='healthrisk-backend'}[5m]) * 100",
+        "legendFormat": "error %"
+      }]
+    },
+    {
+      "id": 4,
+      "title": "Predictions per Minute",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 24, "h": 8 },
+      "targets": [{
+        "expr": "rate(http_requests_total{job='healthrisk-backend',handler='/api/v1/predictions/predict'}[1m]) * 60",
+        "legendFormat": "predictions/min"
+      }]
+    }
+  ]
+}

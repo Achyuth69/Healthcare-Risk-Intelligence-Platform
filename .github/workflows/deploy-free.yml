@@ -1,0 +1,91 @@
+name: Test → Deploy (Render + Vercel)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Run Tests ─────────────────────────────────────────────────
+  test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-render.txt
+
+      - name: Install test dependencies
+        working-directory: backend
+        run: |
+          pip install pytest pytest-asyncio httpx \
+            pydantic==2.10.6 pydantic-settings==2.7.0 \
+            fastapi==0.115.6 sqlalchemy==2.0.36 aiosqlite \
+            python-jose[cryptography] bcrypt==4.2.1 cryptography \
+            structlog numpy scikit-learn
+
+      - name: Run tests
+        working-directory: backend
+        env:
+          DATABASE_URL: sqlite+aiosqlite:///./test.db
+          SECRET_KEY: test-secret-key-32-chars-minimum-ok!
+          JWT_SECRET_KEY: test-jwt-secret-32-chars-minimum-ok!
+          ENCRYPTION_KEY: test-encryption-key-32-bytes-here!
+          APP_ENV: test
+          DEBUG: "false"
+        run: python -m pytest tests/ -v --tb=short -x
+
+  # ── Deploy Backend to Render ──────────────────────────────────
+  deploy-backend:
+    name: Deploy Backend → Render
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -fsSX POST \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":false}'
+          echo "Render deploy triggered"
+
+      - name: Wait and verify health
+        run: |
+          echo "Waiting 90s for Render to deploy..."
+          sleep 90
+          curl -f https://healthrisk-backend.onrender.com/health \
+            && echo "Backend healthy" \
+            || echo "Backend not yet ready (may still be deploying)"
+
+  # ── Deploy Frontend to Vercel ─────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend → Vercel
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      - name: Deploy to Vercel (production)
+        working-directory: frontend
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: vercel --prod --token=$VERCEL_TOKEN --yes

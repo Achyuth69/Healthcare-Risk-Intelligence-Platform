@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: healthrisk
+  labels:
+    app: healthrisk-platform
+    environment: production
+---
+# Service Account for backend pods
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: healthrisk-backend-sa
+  namespace: healthrisk
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/healthrisk-backend-role
+---
+# Network Policy — restrict inter-pod traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: healthrisk-network-policy
+  namespace: healthrisk
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: healthrisk
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: healthrisk
+    - ports:
+        - port: 443   # HTTPS to AWS services
+        - port: 53    # DNS
+          protocol: UDP
