@@ -75,9 +75,9 @@ const Sidebar: React.FC = () => {
 
 // ── App Layout ────────────────────────────────────────────────
 const AppLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="flex">
+  <div className="flex bg-gray-950 min-h-screen">
     <Sidebar />
-    <main className="ml-64 flex-1 min-h-screen bg-gray-50">{children}</main>
+    <main className="ml-64 flex-1 bg-gray-950">{children}</main>
   </div>
 );
 
