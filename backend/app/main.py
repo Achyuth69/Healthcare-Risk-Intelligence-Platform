@@ -33,7 +33,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error("DB init failed — check DATABASE_URL env var", error=str(e))
         logger.warning("App starting WITHOUT database — auth/predictions will return 503")
-
     # ML Models
     from app.ml.model_registry import ModelRegistry
     await ModelRegistry.initialize()
@@ -144,9 +143,9 @@ def create_application() -> FastAPI:
             async with engine.connect() as conn:
                 from sqlalchemy import text
                 await conn.execute(text("SELECT 1"))
-            return {"database": "connected", "url_used": safe_url, "build": "nullpool-v3"}
+            return {"database": "connected", "url_used": safe_url, "build": "nullpool-v4-forced"}
         except Exception as e:
-            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "nullpool-v3"}
+            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "nullpool-v4-forced"}
 
     return app
 

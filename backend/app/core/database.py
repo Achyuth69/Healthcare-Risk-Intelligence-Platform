@@ -1,14 +1,12 @@
 """
 Database Configuration — Async SQLAlchemy
-Supabase Transaction Pooler requires:
-  - statement_cache_size=0  (asyncpg connect_arg)
-  - pool_pre_ping=False
-  - no prepared statements
+Uses NullPool for ALL PostgreSQL connections to avoid
+PgBouncer / Supabase Transaction Pooler prepared statement conflicts.
 """
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import NullPool, StaticPool
 from fastapi import HTTPException, status
 
 from app.config import settings
@@ -22,6 +20,7 @@ class Base(DeclarativeBase):
 
 def _build_engine():
     url = settings.DATABASE_URL
+    logger.info("Building DB engine", url_prefix=url[:30])
 
     # ── SQLite (local dev) ────────────────────────────────────
     if url.startswith("sqlite"):
@@ -29,31 +28,23 @@ def _build_engine():
             url,
             echo=settings.DEBUG,
             connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
         )
 
-    # ── Supabase Transaction Pooler (port 6543) ───────────────
-    # PgBouncer transaction mode does NOT support prepared statements.
-    # Fix: statement_cache_size=0 in asyncpg + NullPool in SQLAlchemy
-    # NullPool = no connection reuse = no prepared statement conflicts
-    if "pooler.supabase.com" in url or "6543" in url:
-        return create_async_engine(
-            url,
-            poolclass=NullPool,           # new connection per request — safest for pooler
-            echo=settings.DEBUG,
-            connect_args={
-                "ssl": "require",
-                "statement_cache_size": 0,   # disable asyncpg prepared statement cache
-            },
-        )
-
-    # ── Standard PostgreSQL (Render internal DB, AWS RDS) ─────
+    # ── ALL PostgreSQL — NullPool + no prepared statements ────
+    # NullPool: new connection per request, no pool reuse.
+    # This is the ONLY safe option for Supabase Transaction Pooler
+    # (PgBouncer in transaction mode bans prepared statements).
     return create_async_engine(
         url,
-        pool_size=5,
-        max_overflow=10,
-        pool_pre_ping=True,
-        pool_recycle=300,
+        poolclass=NullPool,
         echo=settings.DEBUG,
+        execution_options={"no_parameters": True},
+        connect_args={
+            "ssl": "require",
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+        },
     )
 
 
