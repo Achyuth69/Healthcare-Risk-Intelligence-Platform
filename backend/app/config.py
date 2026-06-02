@@ -63,7 +63,9 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str
 
     # ── CORS ─────────────────────────────────────────────────
-    ALLOWED_ORIGINS: str = "http://localhost:3000"
+    # Use * to allow all origins, or comma-separated list
+    # Render env var: ALLOWED_ORIGINS=https://your-app.vercel.app,http://localhost:3000
+    ALLOWED_ORIGINS: str = "*"
 
     @field_validator("ALLOWED_ORIGINS", mode="before")
     @classmethod
