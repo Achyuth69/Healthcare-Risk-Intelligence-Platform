@@ -122,7 +122,7 @@ def create_application() -> FastAPI:
             "status": "healthy",
             "version": settings.APP_VERSION,
             "environment": settings.APP_ENV,
-            "build": "no-create-all-v9",
+            "build": "session-pooler-v10",
         }
 
     @app.get("/db-test", tags=["Health"])
@@ -138,9 +138,9 @@ def create_application() -> FastAPI:
             async with engine.connect() as conn:
                 from sqlalchemy import text
                 await conn.execute(text("SELECT 1"))
-            return {"database": "connected", "url_used": safe_url, "build": "no-create-all-v9"}
+            return {"database": "connected", "url_used": safe_url, "build": "session-pooler-v10"}
         except Exception as e:
-            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "no-create-all-v9"}
+            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "session-pooler-v10"}
 
     return app
 

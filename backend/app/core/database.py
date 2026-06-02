@@ -1,7 +1,7 @@
 """
 Database — Async SQLAlchemy with asyncpg
-Tables are pre-created via Supabase SQL Editor — no create_all needed.
-NullPool prevents connection reuse across requests.
+Uses Supabase Session Pooler (port 5432) which supports prepared statements.
+NullPool ensures no connection reuse between requests.
 """
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -30,23 +30,21 @@ def _build_engine():
             poolclass=StaticPool,
         )
 
-    # ── PostgreSQL (Supabase) ─────────────────────────────────
-    # Normalize to asyncpg dialect
+    # ── PostgreSQL (Supabase Session Pooler port 5432) ────────
     pg_url = url
     if not pg_url.startswith("postgresql+asyncpg://"):
         pg_url = pg_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    # Remove any existing query params — add our own
+    # Remove query params that may cause issues
     if "?" in pg_url:
         pg_url = pg_url.split("?")[0]
-    # Add statement_cache_size=0 via URL parameter (asyncpg native)
-    pg_url = pg_url + "?prepared_statement_cache_size=0"
 
-    logger.info("Building PostgreSQL engine", url_prefix=pg_url[:50])
+    logger.info("Building PostgreSQL engine", prefix=pg_url[:55])
 
     return create_async_engine(
         pg_url,
         poolclass=NullPool,
         echo=settings.DEBUG,
+        connect_args={"ssl": "require"},
     )
 
 
