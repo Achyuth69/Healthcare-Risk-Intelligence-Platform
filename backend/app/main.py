@@ -127,6 +127,33 @@ def create_application() -> FastAPI:
             "environment": settings.APP_ENV,
         }
 
+    # DB diagnostics — shows exact connection error
+    @app.get("/db-test", tags=["Health"])
+    async def db_test():
+        import os
+        url = settings.DATABASE_URL
+        # Mask password for safe display
+        try:
+            from urllib.parse import urlparse
+            p = urlparse(url)
+            safe_url = f"{p.scheme}://{p.username}:***@{p.hostname}:{p.port}{p.path}"
+        except Exception:
+            safe_url = "unable to parse"
+        try:
+            async with engine.connect() as conn:
+                from sqlalchemy import text
+                result = await conn.execute(text("SELECT 1"))
+                return {
+                    "database": "connected",
+                    "url_used": safe_url,
+                }
+        except Exception as e:
+            return {
+                "database": "failed",
+                "url_used": safe_url,
+                "error": str(e),
+            }
+
     return app
 
 
