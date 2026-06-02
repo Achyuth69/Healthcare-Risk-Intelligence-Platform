@@ -1,13 +1,14 @@
 """
 Database Configuration — Async SQLAlchemy
-Supports:
-  - SQLite   (local dev)         sqlite+aiosqlite:///./healthrisk_dev.db
-  - Supabase (production/Render) postgresql+asyncpg://...pooler.supabase.com:6543/postgres
-  - Render PG (alternative)      postgresql+asyncpg://...render.com/healthrisk_db
+Supabase Transaction Pooler requires:
+  - statement_cache_size=0  (asyncpg connect_arg)
+  - pool_pre_ping=False
+  - no prepared statements
 """
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.pool import NullPool
 from fastapi import HTTPException, status
 
 from app.config import settings
@@ -30,22 +31,22 @@ def _build_engine():
             connect_args={"check_same_thread": False},
         )
 
-    # ── PostgreSQL via Supabase Transaction Pooler (port 6543) ─
+    # ── Supabase Transaction Pooler (port 6543) ───────────────
+    # PgBouncer transaction mode does NOT support prepared statements.
+    # Fix: statement_cache_size=0 in asyncpg + NullPool in SQLAlchemy
+    # NullPool = no connection reuse = no prepared statement conflicts
     if "pooler.supabase.com" in url or "6543" in url:
         return create_async_engine(
             url,
-            pool_size=3,
-            max_overflow=5,
-            pool_pre_ping=False,        # must be False for PgBouncer transaction mode
-            pool_recycle=300,
+            poolclass=NullPool,           # new connection per request — safest for pooler
             echo=settings.DEBUG,
             connect_args={
                 "ssl": "require",
-                "statement_cache_size": 0,
+                "statement_cache_size": 0,   # disable asyncpg prepared statement cache
             },
         )
 
-    # ── Standard PostgreSQL (Render internal, AWS RDS, etc.) ───
+    # ── Standard PostgreSQL (Render internal DB, AWS RDS) ─────
     return create_async_engine(
         url,
         pool_size=5,
@@ -81,7 +82,7 @@ async def get_db():
         logger.error("DB session error", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Database error: {str(e)[:200]}",
+            detail=f"Database error: {str(e)[:300]}",
         )
     finally:
         await session.close()
