@@ -7,6 +7,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { PredictionPage } from "./pages/PredictionPage";
 import { ChatPage } from "./pages/ChatPage";
 import { LoginPage } from "./pages/LoginPage";
+import { RegisterPage } from "./pages/RegisterPage";
 
 // ── Auth Guard ────────────────────────────────────────────────
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -92,7 +93,8 @@ const App: React.FC = () => {
     <BrowserRouter>
       <Toaster position="top-right" />
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route path="/login"    element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route
           path="/*"
           element={

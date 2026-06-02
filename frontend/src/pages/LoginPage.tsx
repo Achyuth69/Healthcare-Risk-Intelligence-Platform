@@ -2,7 +2,7 @@
  * Login Page
  */
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import toast from "react-hot-toast";
 
@@ -78,6 +78,13 @@ export const LoginPage: React.FC = () => {
 
         <p className="text-center text-xs text-gray-400 mt-6">
           Protected by JWT authentication · HIPAA-compliant
+        </p>
+
+        <p className="text-center text-sm text-gray-500 mt-3">
+          Don't have an account?{" "}
+          <Link to="/register" className="text-blue-600 hover:text-blue-700 font-medium">
+            Create account
+          </Link>
         </p>
       </div>
     </div>
