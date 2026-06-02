@@ -24,15 +24,13 @@ async def lifespan(app: FastAPI):
     configure_logging()
     logger.info("Starting HealthRisk AI", version=settings.APP_VERSION, env=settings.APP_ENV)
 
-    # DB — non-fatal startup
+    # DB — tables already created via Supabase SQL editor
+    # Skip create_all to avoid PgBouncer prepared statement conflict
     try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.create_all)
-        logger.info("Database tables initialized")
         await _seed_admin()
+        logger.info("Database ready")
     except Exception as e:
-        logger.error("DB init failed — check DATABASE_URL env var", error=str(e))
-        logger.warning("App starting WITHOUT database — auth/predictions will return 503")
+        logger.error("DB seed failed", error=str(e))
     # ML Models
     from app.ml.model_registry import ModelRegistry
     await ModelRegistry.initialize()
@@ -124,7 +122,7 @@ def create_application() -> FastAPI:
             "status": "healthy",
             "version": settings.APP_VERSION,
             "environment": settings.APP_ENV,
-            "build": "raw-asyncpg-creator-v8",
+            "build": "no-create-all-v9",
         }
 
     @app.get("/db-test", tags=["Health"])
@@ -140,9 +138,9 @@ def create_application() -> FastAPI:
             async with engine.connect() as conn:
                 from sqlalchemy import text
                 await conn.execute(text("SELECT 1"))
-            return {"database": "connected", "url_used": safe_url, "build": "raw-asyncpg-creator-v8"}
+            return {"database": "connected", "url_used": safe_url, "build": "no-create-all-v9"}
         except Exception as e:
-            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "raw-asyncpg-creator-v8"}
+            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "no-create-all-v9"}
 
     return app
 

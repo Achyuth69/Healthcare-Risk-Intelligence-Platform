@@ -1,8 +1,8 @@
 """
-Database — raw asyncpg pool with statement_cache_size=0
-bypasses SQLAlchemy's asyncpg wrapper which ignores cache settings.
+Database — Async SQLAlchemy with asyncpg
+Tables are pre-created via Supabase SQL Editor — no create_all needed.
+NullPool prevents connection reuse across requests.
 """
-import asyncpg
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
@@ -18,17 +18,6 @@ class Base(DeclarativeBase):
     pass
 
 
-def _get_pg_dsn() -> str:
-    """Return a clean DSN for asyncpg (no driver prefix, no query params)."""
-    url = settings.DATABASE_URL
-    # Strip sqlalchemy driver prefix
-    url = url.replace("postgresql+asyncpg://", "postgresql://")
-    # Strip any existing query params
-    if "?" in url:
-        url = url.split("?")[0]
-    return url
-
-
 def _build_engine():
     url = settings.DATABASE_URL
 
@@ -41,27 +30,23 @@ def _build_engine():
             poolclass=StaticPool,
         )
 
-    # ── PostgreSQL — use NullPool; actual connection via raw asyncpg ──
+    # ── PostgreSQL (Supabase) ─────────────────────────────────
+    # Normalize to asyncpg dialect
     pg_url = url
     if not pg_url.startswith("postgresql+asyncpg://"):
         pg_url = pg_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # Remove any existing query params — add our own
     if "?" in pg_url:
         pg_url = pg_url.split("?")[0]
+    # Add statement_cache_size=0 via URL parameter (asyncpg native)
+    pg_url = pg_url + "?prepared_statement_cache_size=0"
 
-    async def _creator():
-        dsn = _get_pg_dsn()
-        return await asyncpg.connect(
-            dsn,
-            statement_cache_size=0,       # ← the actual fix
-            prepared_statement_cache_size=0,
-            ssl="require",
-        )
+    logger.info("Building PostgreSQL engine", url_prefix=pg_url[:50])
 
     return create_async_engine(
         pg_url,
         poolclass=NullPool,
         echo=settings.DEBUG,
-        creator=_creator,
     )
 
 
