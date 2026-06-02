@@ -26,37 +26,33 @@ Browser
   │
   ▼
 Vercel  (React frontend — https://YOUR_APP.vercel.app)
-  │  HTTPS API calls to /api/v1/...
+  │  HTTPS API calls
   ▼
 Render.com  (FastAPI backend — https://healthrisk-backend.onrender.com)
-  ├── Supabase PostgreSQL   predictions, users, patients
+  ├── Supabase PostgreSQL   via Transaction Pooler port 6543
   ├── Upstash Redis         rate limiting, caching
-  └── Groq API              Llama 3 70B — free LLM narratives
+  └── Groq API              Llama 3 70B — free LLM
 ```
 
 ---
 
-## Key Files Reference
+## ⚠️ Important: Supabase Connection on Render Free
 
-| File | Purpose |
-|------|---------|
-| `backend/.env` | Local dev secrets (gitignored) |
-| `backend/.env.render` | Render env var template (gitignored) |
-| `.env.example` | Documented template committed to repo |
-| `render.yaml` | Render infrastructure-as-code |
-| `frontend/vercel.json` | Vercel SPA routing config |
-| `backend/requirements-render.txt` | Slim deps for free 512 MB Render tier |
-| `.github/workflows/deploy-free.yml` | CI/CD: test → Render + Vercel |
+Render free tier **blocks port 5432** (direct PostgreSQL).
+You **must** use Supabase's **Transaction Pooler on port 6543** instead.
+
+| Connection Type | Port | Works on Render Free? |
+|----------------|------|----------------------|
+| Direct connection | 5432 | ❌ Blocked |
+| Transaction Pooler | 6543 | ✅ Works |
 
 ---
 
 ## STEP 1 — GitHub (already done)
 
-Your code is already at:
 ```
 https://github.com/Achyuth69/Healthcare-Risk-Intelligence-Platform
 ```
-All other platforms connect directly to this repo.
 
 ---
 
@@ -64,27 +60,32 @@ All other platforms connect directly to this repo.
 
 ### 2.1 Create project
 1. Go to **https://supabase.com** → **Sign Up** (GitHub login)
-2. **New Project**
-   - Name: `healthrisk`
-   - Database Password: generate strong one → **copy and save it**
-   - Region: closest to you
-3. Wait ~2 minutes for provisioning
+2. **New Project** → Name: `healthrisk` → set password → **Create**
+3. Wait ~2 minutes
 
-### 2.2 Get your connection string
-1. **Settings** → **Database** → scroll to **Connection String**
-2. Select the **URI** tab → copy the string
-3. It looks like:
-   ```
-   postgresql://postgres:YOUR_PASSWORD@db.abcdefghijkl.supabase.co:5432/postgres
-   ```
-4. Change the driver prefix for asyncpg:
-   ```
-   postgresql+asyncpg://postgres:YOUR_PASSWORD@db.abcdefghijkl.supabase.co:5432/postgres
-   ```
-5. Save this — you'll need it in Render (STEP 5)
+### 2.2 Get Transaction Pooler URL (NOT direct connection)
+
+> ⚠️ This is the critical step. Use the **Transaction Pooler**, NOT the direct URI.
+
+1. **Settings** → **Database**
+2. Scroll to **Connection Pooling** section
+3. Set **Pool Mode** to **Transaction**
+4. Copy the **Connection String** from the pooler section
+
+It looks like this:
+```
+postgres://postgres.pmhazxdanfriuhzvjodn:YOUR_PASSWORD@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+```
+
+5. Change `postgres://` → `postgresql+asyncpg://` for SQLAlchemy:
+```
+postgresql+asyncpg://postgres.pmhazxdanfriuhzvjodn:YOUR_PASSWORD@aws-0-us-east-1.pooler.supabase.com:6543/postgres
+```
+
+6. Save this — you'll need it as `DATABASE_URL` in Render (STEP 5)
 
 ### 2.3 Run the database schema
-1. **SQL Editor** → **New Query** → paste the entire block below → click **Run**
+1. **SQL Editor** → **New Query** → paste this entire block → click **Run**
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -165,7 +166,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Default admin user  (password: Admin@123!)
+-- Default admin user (password: Admin@123!)
 INSERT INTO users (email, hashed_password, full_name, role, is_active, is_verified)
 VALUES (
     'admin@healthrisk.ai',
@@ -179,256 +180,195 @@ VALUES (
 ## STEP 3 — Upstash Redis (Free Cache)
 
 1. Go to **https://upstash.com** → **Sign Up** (GitHub login)
-2. **Create Database**
-   - Name: `healthrisk-cache`
-   - Type: **Regional**
-   - Region: **US-East-1**
-3. After creation, go to **Details** tab
-4. Copy the **Redis URL** — it looks like:
+2. **Create Database** → Name: `healthrisk-cache` → Region: US-East-1 → **Create**
+3. Copy the **Redis URL** from the Details tab:
    ```
-   rediss://default:AxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxX@us1-xxxx-xxxx.upstash.io:6379
+   rediss://default:PASSWORD@us1-xxxx.upstash.io:6379
    ```
-5. Save this — you'll need it in Render (STEP 5)
 
 ---
 
 ## STEP 4 — Groq API Key (Free Llama 3 70B)
 
 1. Go to **https://console.groq.com** → **Sign Up** (GitHub login, no credit card)
-2. **API Keys** in the left sidebar → **Create API Key**
-3. Name: `healthrisk` → **Submit**
-4. Copy the key — it starts with `gsk_` and looks like:
-   ```
-   gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-5. Save this — you'll need it in Render (STEP 5) and your local `.env`
+2. **API Keys** → **Create API Key** → name: `healthrisk`
+3. Copy the key: `gsk_xxxxxxxxxxxxxxxxxxxx`
 
-> **Free limits:** 14,400 requests/day · 6,000 tokens/min · Llama 3 70B included
-
-### Add to local `.env` right now
-
-Open `backend/.env` and update this line:
-```env
-GROQ_API_KEY=gsk_paste_your_actual_key_here
-```
+> Free: 14,400 req/day · 6,000 tokens/min
 
 ---
 
 ## STEP 5 — Deploy Backend on Render
 
 ### 5.1 Create Web Service
-1. Go to **https://render.com** → **Sign Up** (GitHub login)
+1. **https://render.com** → **Sign Up** (GitHub login)
 2. **New +** → **Web Service**
-3. Connect GitHub → select **Healthcare-Risk-Intelligence-Platform**
+3. Connect **Healthcare-Risk-Intelligence-Platform** repo
 4. Configure:
 
-   | Field | Value |
-   |-------|-------|
-   | Name | `healthrisk-backend` |
-   | Root Directory | `backend` |
-   | Runtime | `Python 3` |
-   | Build Command | `pip install -r requirements-render.txt` |
-   | Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
-   | Plan | `Free` |
+| Field | Value |
+|-------|-------|
+| Name | `healthrisk-backend` |
+| Root Directory | `backend` |
+| Runtime | `Python 3` |
+| Build Command | `pip install -r requirements-render.txt` |
+| Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+| Plan | `Free` |
 
 ### 5.2 Add Environment Variables
 
-Click **Environment** → **Add Environment Variable** for each row:
-
-| Key | Value | Where to get it |
-|-----|-------|-----------------|
-| `APP_ENV` | `production` | hardcode |
-| `DEBUG` | `false` | hardcode |
-| `APP_VERSION` | `1.0.0` | hardcode |
-| `DATABASE_URL` | `postgresql+asyncpg://postgres:PASS@db.XXX.supabase.co:5432/postgres` | Supabase STEP 2.2 |
-| `SECRET_KEY` | *(click **Generate**)* | Render auto-generates |
-| `JWT_SECRET_KEY` | *(click **Generate**)* | Render auto-generates |
-| `JWT_ALGORITHM` | `HS256` | hardcode |
-| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | hardcode |
-| `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `7` | hardcode |
-| `ENCRYPTION_KEY` | any 32-char random string | e.g. `MyR@ndomEncryptionKey32Chars!!` |
-| `REDIS_URL` | `rediss://default:PASS@us1-xxx.upstash.io:6379` | Upstash STEP 3 |
-| `GROQ_API_KEY` | `gsk_your_key_here` | Groq STEP 4 |
-| `GROQ_MODEL` | `llama3-70b-8192` | hardcode |
-| `CHROMA_HOST` | `localhost` | hardcode |
-| `CHROMA_PORT` | `8001` | hardcode |
-| `CHROMA_COLLECTION_NAME` | `healthcare_docs` | hardcode |
-| `MODEL_ARTIFACTS_DIR` | `/tmp/models` | hardcode |
-| `LOG_LEVEL` | `INFO` | hardcode |
-| `LOG_FORMAT` | `json` | hardcode |
-| `ALLOWED_ORIGINS` | `https://YOUR_APP.vercel.app,http://localhost:3000` | update after STEP 6 |
-
-> **Tip:** Use `backend/.env.render` in this repo as your reference checklist.
+| Key | Value |
+|-----|-------|
+| `APP_ENV` | `production` |
+| `DEBUG` | `false` |
+| `APP_VERSION` | `1.0.0` |
+| `DATABASE_URL` | `postgresql+asyncpg://postgres.pmhazxdanfriuhzvjodn:YOUR_PASS@aws-0-us-east-1.pooler.supabase.com:6543/postgres` |
+| `SECRET_KEY` | click **Generate** |
+| `JWT_SECRET_KEY` | click **Generate** |
+| `JWT_ALGORITHM` | `HS256` |
+| `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` | `60` |
+| `JWT_REFRESH_TOKEN_EXPIRE_DAYS` | `7` |
+| `ENCRYPTION_KEY` | any 32-char string e.g. `HealthRiskEncKey32BytesOk2024!!` |
+| `REDIS_URL` | `rediss://default:PASSWORD@us1-xxxx.upstash.io:6379` |
+| `GROQ_API_KEY` | `gsk_your_key_here` |
+| `GROQ_MODEL` | `llama3-70b-8192` |
+| `CHROMA_HOST` | `localhost` |
+| `CHROMA_PORT` | `8001` |
+| `CHROMA_COLLECTION_NAME` | `healthcare_docs` |
+| `MODEL_ARTIFACTS_DIR` | `/tmp/models` |
+| `LOG_LEVEL` | `INFO` |
+| `LOG_FORMAT` | `json` |
+| `ALLOWED_ORIGINS` | `*` |
 
 ### 5.3 Deploy
-Click **Create Web Service** → Render pulls from GitHub and builds.
+Click **Create Web Service** → Render builds in ~3 min.
 
-After ~3 minutes:
+Verify:
 ```
-✅ https://healthrisk-backend.onrender.com/health
-   → {"status":"healthy","version":"1.0.0","environment":"production"}
+https://healthrisk-backend.onrender.com/health
+→ {"status":"healthy","version":"1.0.0","environment":"production"}
 
-✅ https://healthrisk-backend.onrender.com/docs
-   → Full Swagger UI — all 20+ endpoints interactive
+https://healthrisk-backend.onrender.com/docs
+→ Full Swagger UI
 ```
-
-> **Free tier note:** Spins down after 15 min idle. First request takes ~30s to wake. See STEP 9 to keep it awake 24/7 for free.
 
 ---
 
 ## STEP 6 — Deploy Frontend on Vercel
 
-### 6.1 Import project
-1. Go to **https://vercel.com** → **Sign Up** (GitHub login)
-2. **Add New** → **Project**
-3. Import **Healthcare-Risk-Intelligence-Platform** from GitHub
-4. Configure:
+1. **https://vercel.com** → **Sign Up** → **Add New Project**
+2. Import **Healthcare-Risk-Intelligence-Platform**
+3. Configure:
 
-   | Field | Value |
-   |-------|-------|
-   | Framework Preset | `Vite` |
-   | Root Directory | `frontend` |
-   | Build Command | `npm run build` |
-   | Output Directory | `dist` |
+| Field | Value |
+|-------|-------|
+| Framework Preset | `Vite` |
+| Root Directory | `frontend` |
+| Build Command | `npm run build` |
+| Output Directory | `dist` |
 
-### 6.2 Add Environment Variable
-**Environment Variables** section → Add:
+4. Add Environment Variable:
 
 | Key | Value |
 |-----|-------|
 | `VITE_API_URL` | `https://healthrisk-backend.onrender.com/api/v1` |
 
-### 6.3 Deploy
-Click **Deploy** → Vercel builds in ~1 minute.
-
-Your frontend URL:
-```
-https://healthcare-risk-intelligence-platform.vercel.app
-```
+5. Click **Deploy** → live in ~1 min
 
 ---
 
-## STEP 7 — Connect Frontend ↔ Backend (CORS)
+## STEP 7 — Set Up GitHub Actions CI/CD
 
-Go to **Render** → **healthrisk-backend** → **Environment**
+**Settings → Secrets and variables → Actions → New repository secret**
 
-Update `ALLOWED_ORIGINS` to your real Vercel URL:
-```
-https://healthcare-risk-intelligence-platform.vercel.app,http://localhost:3000
-```
-
-Click **Save Changes** → Render redeploys in ~1 minute automatically.
-
----
-
-## STEP 8 — Set Up CI/CD (GitHub Actions)
-
-Every `git push` to `main` will automatically test → deploy backend → deploy frontend.
-
-Add these secrets to GitHub:
-**repo → Settings → Secrets and variables → Actions → New repository secret**
-
-| Secret Name | Where to find the value |
-|-------------|------------------------|
-| `RENDER_API_KEY` | Render → Account Settings → API Keys → Create API Key |
+| Secret | Where to find |
+|--------|--------------|
+| `RENDER_API_KEY` | Render → Account Settings → API Keys → Create |
 | `RENDER_SERVICE_ID` | Render → healthrisk-backend → Settings → Service ID |
 | `VERCEL_TOKEN` | vercel.com → Settings → Tokens → Create |
 | `VERCEL_ORG_ID` | vercel.com → Settings → General → Team ID |
 | `VERCEL_PROJECT_ID` | Vercel project → Settings → General → Project ID |
 
-The workflow file `.github/workflows/deploy-free.yml` is already in your repo and runs automatically.
+Workflow file `.github/workflows/deploy-free.yml` is already in the repo.
 
 ---
 
-## STEP 9 — Keep Render Awake 24/7 (Free)
+## STEP 8 — Keep Render Awake 24/7 (Free)
 
-Free Render services sleep after 15 min of inactivity. Fix with UptimeRobot:
-
-1. Go to **https://uptimerobot.com** → **Sign Up** (free)
+1. **https://uptimerobot.com** → Sign up free
 2. **Add New Monitor**
-   - Monitor Type: `HTTP(s)`
-   - Friendly Name: `HealthRisk Backend`
+   - Type: `HTTP(s)`
    - URL: `https://healthrisk-backend.onrender.com/health`
-   - Monitoring Interval: **14 minutes**
-3. Click **Create Monitor**
-
-Your backend now stays awake 24/7 at zero cost.
+   - Interval: **14 minutes**
+3. **Create Monitor** — backend stays awake forever
 
 ---
 
-## STEP 10 — Verify Everything End-to-End
+## STEP 9 — Verify End-to-End
 
 ```
-1. Frontend login page
-   → https://healthcare-risk-intelligence-platform.vercel.app
-   → Should show the HealthRisk AI login screen
+1. https://YOUR_APP.vercel.app
+   → Login page ✅
 
-2. Login
-   → Email:    admin@healthrisk.ai
-   → Password: Admin@123!
-   → Should reach the Dashboard with charts
+2. Login: admin@healthrisk.ai / Admin@123!
+   → Dashboard with charts ✅
 
-3. Risk Assessment
-   → Go to "Risk Assessment" tab
-   → Fill in patient data (age 52, BMI 31, glucose 118...)
-   → Click "Run Risk Assessment"
-   → Should return: risk score % + SHAP waterfall chart + Groq AI narrative
+3. Register new user
+   → /register → fill form → Create Account ✅
 
-4. Clinical AI Chat
-   → Go to "Clinical AI" tab
-   → Ask: "What are the main risk factors for Type 2 Diabetes?"
-   → Should return a Groq Llama 3 generated answer
+4. Risk Assessment
+   → Fill patient data → Run → risk score + SHAP + Groq narrative ✅
 
-5. API Docs (interactive)
-   → https://healthrisk-backend.onrender.com/docs
-   → All 20+ endpoints listed with Try-it-out support
+5. Clinical AI Chat
+   → Ask: "What are the main risk factors for diabetes?"
+   → Groq Llama 3 answer ✅
+
+6. API Docs
+   → https://healthrisk-backend.onrender.com/docs ✅
 ```
 
 ---
 
-## All Free Tier Limits & Workarounds
+## Troubleshooting
 
-| Limit | Impact | Workaround |
-|-------|--------|-----------|
-| Render sleeps after 15 min idle | 30s cold start | UptimeRobot ping every 14 min (STEP 9) |
-| Render 512 MB RAM | No local LLM | Groq API handles LLM (no RAM needed) |
-| Supabase 500 MB DB | ~500,000 predictions | Plenty for demo + small clinic |
-| Groq 14,400 req/day | ~600 predictions/hour | More than enough for most use cases |
-| Vercel 100 GB bandwidth | ~10M page loads/month | Not an issue for this app |
-| GitHub Actions 2,000 min/month | ~100 deploys/month | Each deploy takes ~2 min |
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `503 Service Unavailable` on register/login | Wrong DATABASE_URL | Use Transaction Pooler URL (port 6543) from Supabase |
+| `CORS blocked` | ALLOWED_ORIGINS wrong | Set `ALLOWED_ORIGINS=*` in Render env vars |
+| `net::ERR_FAILED` | Backend sleeping | Wait 30s (cold start) or set up UptimeRobot |
+| `422 Unprocessable Entity` | Password too weak | Must have uppercase, number, special char |
+| `401 Unauthorized` | Wrong credentials | Check email/password, user must be registered |
+
+---
+
+## Free Tier Limits
+
+| Limit | Workaround |
+|-------|-----------|
+| Render sleeps after 15 min idle | UptimeRobot ping every 14 min |
+| Supabase 500 MB DB | ~500,000 prediction records |
+| Groq 14,400 req/day | ~600 predictions/hour |
+| Render 512 MB RAM | No local LLM (Groq API handles it) |
+
+---
+
+## Your Live URLs
+
+```
+Frontend  → https://healthcare-risk-intelligence-platfo.vercel.app
+Backend   → https://healthrisk-backend.onrender.com
+API Docs  → https://healthrisk-backend.onrender.com/docs
+Login     → admin@healthrisk.ai / Admin@123!
+Cost      → $0/month
+```
 
 ---
 
 ## Upgrade Path
 
-| When you need more | Upgrade to | Cost |
-|-------------------|------------|------|
-| Always-on backend (no cold start) | Render Starter | $7/month |
+| Need | Solution | Cost |
+|------|----------|------|
+| Always-on backend | Render Starter | $7/month |
 | More DB storage | Supabase Pro | $25/month |
-| Custom domain (yourapp.com) | Vercel Pro | $20/month |
-| More LLM requests | Groq pay-as-you-go | ~$0.27/million tokens |
+| Custom domain | Vercel Pro | $20/month |
 | Full production (AWS EKS) | See `DEPLOYMENT_GUIDE.md` | ~$717/month |
-
----
-
-## Summary
-
-```
-✅ Frontend  → https://healthcare-risk-intelligence-platform.vercel.app
-✅ Backend   → https://healthrisk-backend.onrender.com
-✅ API Docs  → https://healthrisk-backend.onrender.com/docs
-✅ Login     → admin@healthrisk.ai  /  Admin@123!
-✅ Cost      → $0/month
-✅ Time      → ~20 minutes to deploy
-```
-
-### The 5 accounts you need (all free, all GitHub login)
-
-```
-1. github.com          → already done ✅
-2. supabase.com        → PostgreSQL database
-3. upstash.com         → Redis cache
-4. console.groq.com    → Llama 3 70B LLM
-5. render.com          → Backend hosting
-6. vercel.com          → Frontend hosting
-```
