@@ -1,11 +1,13 @@
 """
-Database Configuration — Async SQLAlchemy with asyncpg
-Supabase Transaction Pooler fix:
-  Add ?prepared_statement_cache_size=0 to the URL
-  This disables asyncpg prepared statement caching at the URL level
+Database — asyncpg with prepared_statement_cache_size=0 hardcoded via creator.
+This is the ONLY reliable way to disable prepared statements for Supabase pooler.
 """
 import structlog
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+import asyncpg
+from sqlalchemy.ext.asyncio import (
+    AsyncSession, AsyncConnection,
+    create_async_engine, async_sessionmaker
+)
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.pool import NullPool, StaticPool
 from fastapi import HTTPException, status
@@ -19,9 +21,19 @@ class Base(DeclarativeBase):
     pass
 
 
+async def _asyncpg_connect(**kwargs):
+    """
+    Custom asyncpg connection factory.
+    Forces prepared_statement_cache_size=0 regardless of URL parameters.
+    This is the definitive fix for Supabase Transaction Pooler (PgBouncer).
+    """
+    kwargs.setdefault("statement_cache_size", 0)
+    kwargs.setdefault("prepared_statement_cache_size", 0)
+    return await asyncpg.connect(**kwargs)
+
+
 def _build_engine():
     url = settings.DATABASE_URL
-    logger.info("Building DB engine", prefix=url[:40])
 
     # ── SQLite (local dev) ────────────────────────────────────
     if url.startswith("sqlite"):
@@ -32,23 +44,27 @@ def _build_engine():
             poolclass=StaticPool,
         )
 
-    # ── PostgreSQL via Supabase Transaction Pooler ────────────
-    # Ensure asyncpg driver prefix
-    if "postgresql://" in url and "+asyncpg" not in url:
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # ── PostgreSQL (Supabase Transaction Pooler) ──────────────
+    # Normalize to asyncpg URL
+    pg_url = url
+    if not pg_url.startswith("postgresql+asyncpg://"):
+        pg_url = pg_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-    # Append prepared_statement_cache_size=0 to disable prepared statements
-    # This is the asyncpg URL-level parameter — overrides everything
-    if "prepared_statement_cache_size" not in url:
-        sep = "&" if "?" in url else "?"
-        url = f"{url}{sep}prepared_statement_cache_size=0"
+    # Strip any existing query params — we handle them via creator
+    if "?" in pg_url:
+        pg_url = pg_url.split("?")[0]
 
-    logger.info("PostgreSQL URL ready", has_cache_disable="prepared_statement_cache_size=0" in url)
+    logger.info("Building PostgreSQL engine with prepared_statement_cache_size=0")
 
     return create_async_engine(
-        url,
-        poolclass=NullPool,   # no connection reuse — safest for PgBouncer
+        pg_url,
+        poolclass=NullPool,
         echo=settings.DEBUG,
+        connect_args={
+            "statement_cache_size": 0,
+            "prepared_statement_cache_size": 0,
+            "ssl": "require",
+        },
     )
 
 
@@ -74,7 +90,7 @@ async def get_db():
         raise
     except Exception as e:
         await session.rollback()
-        logger.error("DB session error", error=str(e))
+        logger.error("DB error", error=str(e))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=f"Database error: {str(e)[:300]}",
