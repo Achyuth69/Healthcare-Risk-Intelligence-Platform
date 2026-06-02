@@ -140,7 +140,7 @@ def create_application() -> FastAPI:
             async with engine.connect() as conn:
                 from sqlalchemy import text
                 await conn.execute(text("SELECT 1"))
-            "build": "asyncpg-connect-args-v7"}
+            return {"database": "connected", "url_used": safe_url, "build": "asyncpg-connect-args-v7"}
         except Exception as e:
             return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "asyncpg-connect-args-v7"}
 
