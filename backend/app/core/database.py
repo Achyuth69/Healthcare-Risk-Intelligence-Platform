@@ -1,8 +1,8 @@
 """
-Database Configuration — Async SQLAlchemy
-- SQLite  for local dev
-- psycopg (psycopg3) for Supabase/PostgreSQL in production
-  psycopg3 does NOT use prepared statements by default → no PgBouncer conflict
+Database Configuration — Async SQLAlchemy with asyncpg
+Supabase Transaction Pooler fix:
+  Add ?prepared_statement_cache_size=0 to the URL
+  This disables asyncpg prepared statement caching at the URL level
 """
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
@@ -21,7 +21,7 @@ class Base(DeclarativeBase):
 
 def _build_engine():
     url = settings.DATABASE_URL
-    logger.info("Building DB engine", prefix=url[:35])
+    logger.info("Building DB engine", prefix=url[:40])
 
     # ── SQLite (local dev) ────────────────────────────────────
     if url.startswith("sqlite"):
@@ -32,24 +32,23 @@ def _build_engine():
             poolclass=StaticPool,
         )
 
-    # ── PostgreSQL (production) ───────────────────────────────
-    # Convert asyncpg URL → psycopg URL
-    # asyncpg: postgresql+asyncpg://...
-    # psycopg: postgresql+psycopg://...
-    pg_url = url.replace("postgresql+asyncpg://", "postgresql+psycopg://")
-    if not pg_url.startswith("postgresql+psycopg://"):
-        pg_url = pg_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    # ── PostgreSQL via Supabase Transaction Pooler ────────────
+    # Ensure asyncpg driver prefix
+    if "postgresql://" in url and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-    logger.info("Using psycopg3 driver (no prepared statement conflicts)")
+    # Append prepared_statement_cache_size=0 to disable prepared statements
+    # This is the asyncpg URL-level parameter — overrides everything
+    if "prepared_statement_cache_size" not in url:
+        sep = "&" if "?" in url else "?"
+        url = f"{url}{sep}prepared_statement_cache_size=0"
+
+    logger.info("PostgreSQL URL ready", has_cache_disable="prepared_statement_cache_size=0" in url)
 
     return create_async_engine(
-        pg_url,
-        poolclass=NullPool,       # fresh connection per request
+        url,
+        poolclass=NullPool,   # no connection reuse — safest for PgBouncer
         echo=settings.DEBUG,
-        connect_args={
-            "sslmode": "require",
-            "prepare_threshold": None,  # disable server-side prepared statements
-        },
     )
 
 

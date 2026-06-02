@@ -124,7 +124,7 @@ def create_application() -> FastAPI:
             "status": "healthy",
             "version": settings.APP_VERSION,
             "environment": settings.APP_ENV,
-            "build": "psycopg3-v5",
+            "build": "asyncpg-url-param-v6",
         }
 
     @app.get("/db-test", tags=["Health"])
@@ -140,9 +140,9 @@ def create_application() -> FastAPI:
             async with engine.connect() as conn:
                 from sqlalchemy import text
                 await conn.execute(text("SELECT 1"))
-            return {"database": "connected", "url_used": safe_url, "build": "psycopg3-v5"}
+            return {"database": "connected", "url_used": safe_url, "build": "asyncpg-url-param-v6"}
         except Exception as e:
-            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "psycopg3-v5"}
+            return {"database": "failed", "url_used": safe_url, "error": str(e), "build": "asyncpg-url-param-v6"}
 
     return app
 
