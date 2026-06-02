@@ -47,6 +47,11 @@ class Settings(BaseSettings):
     FINE_TUNED_MODEL_PATH: str = "/models/llama3-healthcare-finetuned"
     EMBEDDING_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
 
+    # ── Groq API (FREE Llama 3 — https://console.groq.com) ───
+    # Priority 1 for LLM inference — no GPU needed, 14,400 req/day free
+    GROQ_API_KEY: Optional[str] = None
+    GROQ_MODEL: str = "llama3-70b-8192"
+
     # ── AWS ──────────────────────────────────────────────────
     AWS_ACCESS_KEY_ID: Optional[str] = None
     AWS_SECRET_ACCESS_KEY: Optional[str] = None

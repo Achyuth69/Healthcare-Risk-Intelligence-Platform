@@ -31,9 +31,10 @@ class GroqInferenceEngine:
     _instance: Optional["GroqInferenceEngine"] = None
 
     def __init__(self):
-        self._api_key = os.getenv("GROQ_API_KEY", "")
-        self._model = os.getenv("GROQ_MODEL", "llama3-70b-8192")
-        self._ready = bool(self._api_key)
+        from app.config import settings
+        self._api_key = settings.GROQ_API_KEY or ""
+        self._model   = settings.GROQ_MODEL
+        self._ready   = bool(self._api_key)
         if self._ready:
             logger.info("Groq LLM engine ready", model=self._model)
         else:
