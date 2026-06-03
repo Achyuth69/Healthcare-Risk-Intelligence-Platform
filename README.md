@@ -104,7 +104,7 @@ EHR analytics are locked to their platform, require IT integration, and typicall
 
 | URL | Description |
 |-----|-------------|
-| **[healthcare-risk-intelligence-platfo.vercel.app](https://healthcare-risk-intelligence-platfo.vercel.app)** | Frontend application |
+| **[healthrisk-ai.vercel.app](https://healthrisk-ai.vercel.app)** | Frontend application |
 | **[healthrisk-backend.onrender.com/docs](https://healthrisk-backend.onrender.com/docs)** | Interactive API documentation |
 
 **Login:** `admin@healthrisk.ai` / `Admin@123!`
